@@ -1,0 +1,73 @@
+#!/bin/bash
+# Interactive settings menu for the memento mori wallpaper.
+set -euo pipefail
+
+CONFIG="$HOME/.config/memento-mori/config.toml"
+GENERATOR="$HOME/.local/bin/memento-mori-wallpaper"
+
+get() { grep -E "^$1 = " "$CONFIG" | sed -E "s/^$1 = \"?([^\"]*)\"?/\1/"; }
+
+set_value() {
+  local key="$1" value="$2" quote="$3"
+  if [[ $quote == q ]]; then
+    sed -i -E "s/^$key = .*/$key = \"$value\"/" "$CONFIG"
+  else
+    sed -i -E "s/^$key = .*/$key = $value/" "$CONFIG"
+  fi
+}
+
+apply() {
+  gum spin --title "Wallpaper wird neu generiert..." -- "$GENERATOR"
+  gum style --foreground 2 "✓ Angewendet."
+}
+
+change_birth_date() {
+  local current new
+  current=$(get birth_date)
+  new=$(gum input --value "$current" --placeholder "YYYY-MM-DD" --prompt "Geburtsdatum: ")
+  if ! date -d "$new" >/dev/null 2>&1; then
+    gum style --foreground 1 "Ungültiges Datum: $new"
+    return
+  fi
+  set_value birth_date "$new" q
+  apply
+}
+
+change_lifespan() {
+  local current new
+  current=$(get lifespan_years)
+  new=$(gum input --value "$current" --placeholder "90" --prompt "Angenommene Lebenserwartung (Jahre): ")
+  if ! [[ $new =~ ^[0-9]+$ ]] || (( new < 1 || new > 130 )); then
+    gum style --foreground 1 "Ungültige Zahl: $new"
+    return
+  fi
+  set_value lifespan_years "$new" ""
+  apply
+}
+
+show_current() {
+  gum style --border rounded --padding "0 1" --foreground 6 \
+    "Geburtsdatum: $(get birth_date)" \
+    "Lebenserwartung: $(get lifespan_years) Jahre"
+}
+
+main_menu() {
+  while true; do
+    show_current
+    choice=$(gum choose \
+      "Geburtsdatum ändern" \
+      "Lebenserwartung ändern" \
+      "Jetzt neu generieren & anwenden" \
+      "Beenden")
+    case "$choice" in
+      "Geburtsdatum ändern") change_birth_date ;;
+      "Lebenserwartung ändern") change_lifespan ;;
+      "Jetzt neu generieren & anwenden") apply ;;
+      "Beenden"|"") break ;;
+    esac
+    echo
+  done
+}
+
+gum style --bold --foreground 5 "Memento Mori — Einstellungen"
+main_menu

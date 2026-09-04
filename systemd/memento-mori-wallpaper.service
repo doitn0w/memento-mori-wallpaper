@@ -1,0 +1,6 @@
+[Unit]
+Description=Regenerate the memento mori life-in-weeks wallpaper
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/memento-mori-wallpaper

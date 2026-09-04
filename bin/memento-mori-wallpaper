@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Generate a 'life in weeks' memento mori wallpaper and set it via omarchy."""
+
+import datetime
+import json
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+CONFIG_PATH = Path.home() / ".config/memento-mori/config.toml"
+STATE_DIR = Path.home() / ".local/state/memento-mori"
+SVG_PATH = STATE_DIR / "wallpaper.svg"
+
+ROWS = 52  # weeks per year (vertical axis)
+
+
+def load_config():
+    data = tomllib.loads(CONFIG_PATH.read_text())
+    birth_date = datetime.date.fromisoformat(data["birth_date"])
+    lifespan_years = int(data["lifespan_years"])
+    return birth_date, lifespan_years
+
+
+def load_theme_colors():
+    theme_dir = Path.home() / ".local/state/omarchy/current/theme"
+    colors_path = theme_dir / "colors.toml"
+    if colors_path.exists():
+        return tomllib.loads(colors_path.read_text())
+    # Fallback palette if no omarchy theme is resolvable.
+    return {
+        "background": "#060B1E",
+        "foreground": "#ffcead",
+        "accent": "#7d82d9",
+        "muted": "#6d7db6",
+    }
+
+
+def get_monitor_size():
+    try:
+        out = subprocess.run(
+            ["hyprctl", "monitors", "-j"], capture_output=True, text=True, check=True
+        ).stdout
+        monitors = json.loads(out)
+        mon = next((m for m in monitors if m.get("focused")), monitors[0])
+        return int(mon["width"]), int(mon["height"])
+    except Exception:
+        return 1920, 1080
+
+
+def darken(hex_color, factor):
+    """Scale a #rrggbb color's channels by factor (0-1, lower = darker)."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    r, g, b = (max(0, min(255, round(c * factor))) for c in (r, g, b))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def build_svg(width, height, colors, birth_date, lifespan_years):
+    bg = colors.get("background", "#060B1E")
+    fg = colors.get("foreground", "#ffcead")
+    accent = colors.get("accent", "#7d82d9")
+    muted = colors.get("muted", "#6d7db6")
+    lived_fill = darken(fg, 0.65)
+
+    today = datetime.date.today()
+    days_lived = (today - birth_date).days
+    weeks_lived = max(0, days_lived // 7)
+    cols = lifespan_years
+    total_weeks = cols * ROWS
+    weeks_lived = min(weeks_lived, total_weeks)
+    age_years = days_lived / 365.2425
+    percent = (weeks_lived / total_weeks) * 100
+
+    top_margin = height * 0.17
+    bottom_margin = height * 0.075
+    side_margin = width * 0.045
+
+    avail_h = height - top_margin - bottom_margin
+    avail_w = width - 2 * side_margin
+    spacing = min(avail_h / ROWS, avail_w / cols)
+
+    grid_w = cols * spacing
+    grid_h = ROWS * spacing
+    left = (width - grid_w) / 2
+    top = top_margin + (avail_h - grid_h) / 2
+
+    radius = spacing * 0.32
+
+    circles = []
+    for col in range(cols):
+        for row in range(ROWS):
+            idx = col * ROWS + row
+            cx = left + col * spacing + spacing / 2
+            cy = top + row * spacing + spacing / 2
+            if idx < weeks_lived:
+                circles.append(
+                    f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{radius:.2f}" fill="{lived_fill}"/>'
+                )
+            else:
+                circles.append(
+                    f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{radius:.2f}" '
+                    f'fill="none" stroke="{muted}" stroke-opacity="0.35" stroke-width="{max(1, radius*0.18):.2f}"/>'
+                )
+
+    # decade markers along the bottom edge
+    labels = []
+    for col in range(0, cols, 10):
+        cx = left + col * spacing + spacing / 2
+        labels.append(
+            f'<text x="{cx:.2f}" y="{top + grid_h + spacing*1.1:.2f}" '
+            f'font-family="monospace" font-size="{spacing*0.85:.2f}" fill="{muted}" '
+            f'text-anchor="middle">{col}</text>'
+        )
+
+    title_y = top_margin * 0.52
+    subtitle_y = top_margin * 0.76
+    stats_y = height - bottom_margin * 0.32
+
+    title_size = height * 0.05
+    subtitle_size = height * 0.017
+    stats_size = height * 0.015
+
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
+  <rect x="0" y="0" width="{width}" height="{height}" fill="{bg}"/>
+  <text x="{width/2}" y="{title_y:.2f}" font-family="Georgia, serif" font-size="{title_size:.2f}"
+        letter-spacing="{title_size*0.35:.2f}" fill="{fg}" text-anchor="middle">MEMENTO MORI</text>
+  <text x="{width/2}" y="{subtitle_y:.2f}" font-family="monospace" font-size="{subtitle_size:.2f}"
+        letter-spacing="{subtitle_size*0.25:.2f}" fill="{muted}" text-anchor="middle">YOUR LIFE IN WEEKS</text>
+  {''.join(circles)}
+  {''.join(labels)}
+  <text x="{width/2}" y="{stats_y:.2f}" font-family="monospace" font-size="{stats_size:.2f}"
+        fill="{accent}" text-anchor="middle">Week {weeks_lived} / {total_weeks} &#8226; {percent:.1f}% &#8226; Age {age_years:.1f} years &#8226; As of {today.isoformat()}</text>
+</svg>'''
+    return svg
+
+
+def main():
+    birth_date, lifespan_years = load_config()
+    colors = load_theme_colors()
+    width, height = get_monitor_size()
+
+    svg = build_svg(width, height, colors, birth_date, lifespan_years)
+
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    SVG_PATH.write_text(svg)
+
+    # omarchy-shell's background plugin no-ops when the path is unchanged from
+    # the last call, so each regeneration needs a fresh filename to be picked up.
+    stamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    png_path = STATE_DIR / f"wallpaper-{stamp}.png"
+
+    subprocess.run(
+        ["rsvg-convert", "-w", str(width), "-h", str(height), str(SVG_PATH), "-o", str(png_path)],
+        check=True,
+    )
+
+    subprocess.run(["omarchy-theme-bg-set", str(png_path)], check=True)
+
+    for old in STATE_DIR.glob("wallpaper-*.png"):
+        if old != png_path:
+            old.unlink()
+
+    print(f"Memento mori wallpaper updated: {png_path}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except FileNotFoundError as e:
+        print(f"Missing config or tool: {e}", file=sys.stderr)
+        sys.exit(1)

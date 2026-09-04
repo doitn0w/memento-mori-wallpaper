@@ -1,0 +1,3 @@
+#!/bin/bash
+# Regenerate the memento mori wallpaper with the newly active theme's colors.
+exec "$HOME/.local/bin/memento-mori-wallpaper"

@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly refresh of the memento mori wallpaper
+
+[Timer]
+OnCalendar=Mon *-*-* 00:05:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
