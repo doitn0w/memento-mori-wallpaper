@@ -21,7 +21,7 @@ Colors follow your active Omarchy theme automatically.
 ## Install
 
 ```bash
-git clone https://github.com/<your-username>/memento-mori-wallpaper.git
+git clone https://github.com/doitn0w/memento-mori-wallpaper.git
 cd memento-mori-wallpaper
 ./install.sh
 ```
